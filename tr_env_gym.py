@@ -319,6 +319,10 @@ class tr_env_gym(MujocoEnv, utils.EzPickle):
         
         return is_healthy
 
+    def _contact_factor(self,z_pos,r=0.05):
+        return np.clip(r/z_pos, 0, 1)
+
+
     @property
     def terminated(self):
         terminated = not self.is_healthy if self._terminate_when_unhealthy else False
@@ -383,7 +387,8 @@ class tr_env_gym(MujocoEnv, utils.EzPickle):
         tendon_length_6 = tendon_length[:6]
 
         state, observation, gt_log_intriparam = self._get_obs()
-
+        z_state =  state[2::3][:6]
+        contact_factor = self._contact_factor(z_state)
 
         if self._desired_action == "turn":
             self._heading_buffer.append(psi_after)
@@ -509,10 +514,9 @@ class tr_env_gym(MujocoEnv, utils.EzPickle):
         if self.render_mode == "human":
             self.render()
         
-        return state, observation, gt_log_intriparam, reward, terminated, False, info
+        return state, observation, gt_log_intriparam, reward, terminated, False, info, contact_factor
 
     def _get_obs(self):
-        
         
         """ rotation_r01 = Rotation.from_matrix(self.data.geom("r01").xmat.reshape(3,3)).as_quat() # 4
         rotation_r23 = Rotation.from_matrix(self.data.geom("r23").xmat.reshape(3,3)).as_quat() # 4
@@ -978,3 +982,5 @@ class tr_env_gym(MujocoEnv, utils.EzPickle):
                 getattr(self.viewer.cam, key)[:] = value
             else:
                 setattr(self.viewer.cam, key, value)
+
+    

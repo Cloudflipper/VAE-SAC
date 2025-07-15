@@ -8,6 +8,7 @@ from collections import deque
 from collections.abc import Iterable
 from itertools import zip_longest
 from typing import List
+from dha_vae import DHA_VAE
 
 def weights_init_(m):
     if isinstance(m, nn.Linear):
@@ -174,8 +175,9 @@ class ReplayBuffer:
         self.rewards = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
         self.next_observations = torch.zeros((capacity, obs_dim), dtype=torch.float32, device=device)
         self.dones = torch.zeros((capacity, 1), dtype=torch.float32, device=device)
+        self.contacts = torch.zeros((capacity,6), dtype=torch.float32, device=device)
     
-    def push(self, observation, action, reward, next_observation, done):
+    def push(self, observation, action, reward, next_observation, done,next_contact):
         i = self.ptr
 
         self.observations[i] = torch.tensor(observation, dtype=torch.float32, device=self.device)
@@ -183,6 +185,7 @@ class ReplayBuffer:
         self.rewards[i] = torch.tensor([reward], dtype=torch.float32, device=self.device)
         self.next_observations[i] = torch.tensor(next_observation, dtype=torch.float32, device=self.device)
         self.dones[i] = torch.tensor([done], dtype=torch.float32, device=self.device)
+        self.contacts[i] = torch.tensor(next_contact, dtype=torch.float32, device=self.device)
 
         self.ptr = (self.ptr + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
@@ -197,8 +200,35 @@ class ReplayBuffer:
             self.actions[indices],
             self.rewards[indices],
             self.next_observations[indices],
-            self.dones[indices]
+            self.dones[indices],
+            self.contacts[indices]
         )
+    
+    def _make_group_index(self,indices,length):
+        return indices.view(-1, 1)+torch.arange(length, device=self.device).view(1, -1) 
+
+    def group_sample(self,batch_size,length):
+        indices = torch.randperm(self.size, device=self.device)[:batch_size]
+        indices = self._make_group_index(indices,length)
+        return (
+            self.observations[indices],
+            self.actions[indices],
+            self.rewards[indices],
+            self.next_observations[indices],
+            self.dones[indices],
+            self.contacts[indices]
+        )
+    
+    def sample_last_obs(self,length):
+        if self.size < length:
+            last_obs = self.observations[:self.size]
+        else:
+            # 拼接成完整环形序列，再取最后 length 条
+            last_obs = torch.cat([
+                self.observations[self.ptr:],
+                self.observations[:self.ptr]
+            ], dim=0)[-length:]
+        return last_obs
 
 
 # SAC Agent class
@@ -264,8 +294,12 @@ class SACAgent:
             "idx_received": self.edge_index[0],
             "idx_sent": self.edge_index[1]
         }
+
+        self.dha_vae = DHA_VAE(num_his_obs = 36*50,num_recon = 42,history_len=50,num_actor_obs=36,num_modes=3,tsdyn_latent_dims=64)
     
     def select_action(self, observation):
+        obs_seq = self.replay_buffer.sample_last_obs(length=50)
+        mode_representation = self.dha_vae.get_representation(obs_seq)#TODO:TO SEE HOW TO UTILIZE IT
         observation = torch.FloatTensor(observation).to(self.device).unsqueeze(0)
         nodes, edge_attr = self._obs_to_graph_input(observation)
         with torch.no_grad():
@@ -288,7 +322,7 @@ class SACAgent:
         #     next_observation_batch = torch.FloatTensor(next_observation_batch).to(self.device)
         #     done_batch = torch.FloatTensor(done_batch).to(self.device)
 
-        observation_batch, action_batch, reward_batch, next_observation_batch, done_batch = self.replay_buffer.sample(self.batch_size)
+        observation_batch, action_batch, reward_batch, next_observation_batch, done_batch,contact_batch = self.replay_buffer.sample(self.batch_size)
         nodes_batch, edge_attr_batch = self._obs_to_graph_input(observation_batch)
         nodes_next_batch, edge_attr_next_batch = self._obs_to_graph_input(next_observation_batch)
 
@@ -332,6 +366,11 @@ class SACAgent:
         for target_param, param in zip(self.target_critic.parameters(), self.critic.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
 
+        #VAE update
+        observation_batch, _, _, next_observation_batch, _,contact_batch = self.replay_buffer.group_sample(self.batch_size,length=50)
+        vae_loss = self.dha_vae.vae_loss(observation_batch,next_observation_batch,contact_batch)
+        vae_loss.backward()
+
         info = {
             'critic_loss': critic_loss.item(),
             'actor_loss': actor_loss.item(),
@@ -339,6 +378,7 @@ class SACAgent:
             'ent_coef': self.alpha,
             'log_pi': action_log_prob.mean().item(),
             'pi_std': std.mean().item(),
+            'vae_loss': vae_loss.item(),
         }
         return info
 

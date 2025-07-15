@@ -50,6 +50,7 @@ def train(env, log_dir, model_dir, lr, gpu_idx=None, tb_step_recorder="False"):
             critic_losses = []
             ent_coef_losses = []
             ent_coefs = []
+            vae_losses = []
 
         start_time = time.time()
 
@@ -58,8 +59,8 @@ def train(env, log_dir, model_dir, lr, gpu_idx=None, tb_step_recorder="False"):
                 action_scaled = np.random.uniform(-1, 1, size=(6,))
             else:
                 action_scaled = agent.select_action(observation)
-            _, next_observation, _, reward, done, _, info_env = env.step(action_scaled)
-            agent.replay_buffer.push(observation, action_scaled, reward, next_observation, done)
+            _, next_observation, _, reward, done, _, info_env,contact_factor = env.step(action_scaled)
+            agent.replay_buffer.push(observation, action_scaled, reward, next_observation, done,contact_factor)
             info_agent = agent.update()
             
             observation = next_observation
@@ -83,6 +84,7 @@ def train(env, log_dir, model_dir, lr, gpu_idx=None, tb_step_recorder="False"):
                     critic_losses.append(info_agent["critic_loss"])
                     ent_coef_losses.append(info_agent["ent_coef_loss"])
                     ent_coefs.append(info_agent["ent_coef"])
+                    vae_losses.append(info_agent["vae_loss"])
 
             if step_num % TIMESTEPS == 0:
                 torch.save(agent.gnn_actor.state_dict(), os.path.join(model_dir, f"actor_{step_num}.pth"))
@@ -103,6 +105,7 @@ def train(env, log_dir, model_dir, lr, gpu_idx=None, tb_step_recorder="False"):
             writer.add_scalar("loss/critic_loss", np.array(critic_losses).mean(), step_num)
             writer.add_scalar("loss/ent_coef_loss", np.array(ent_coef_losses).mean(), step_num)
             writer.add_scalar("loss/ent_coef", np.array(ent_coefs).mean(), step_num)
+            writer.add_scalar("loss/vae_loss", np.array(vae_losses).mean(), step_num)
         writer.flush()
         if tb_step_recorder == "True":
             writer.close()
