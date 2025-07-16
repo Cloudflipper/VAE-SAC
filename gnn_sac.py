@@ -295,7 +295,7 @@ class SACAgent:
             "idx_sent": self.edge_index[1]
         }
 
-        self.dha_vae = DHA_VAE(num_his_obs = 36*50,num_recon = 42,history_len=50,num_actor_obs=36,num_modes=3,tsdyn_latent_dims=64)
+        self.dha_vae = DHA_VAE(num_his_obs = 36*50,num_recon = 42,history_len=50,num_actor_obs=36,num_modes=3,tsdyn_latent_dims=64).to(self.device)
     
     def select_action(self, observation):
         obs_seq = self.replay_buffer.sample_last_obs(length=50)

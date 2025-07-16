@@ -248,10 +248,11 @@ class DHA_VAE(nn.Module):
         Should be next_obs_dim + contact_dim (concatenated targets).
     
     history_len : int
-        Number of historical timesteps used for sequential modeling.
+        Number of historical timesteps used for sequential modeling. Choose from [10,20,50]
     
     num_actor_obs : int
         Dimension of current agent observation (input to DHA module).
+        For MDP, num_his_obs=num_actor_obs*history_len.
     
     num_modes : int
         Number of discrete behavioral modes (e.g., walking, running).
@@ -315,7 +316,7 @@ class DHA_VAE(nn.Module):
         '''
         observations: (batch_size,history_length,obs_dim)
         '''
-        observations = observations.float().unsqueeze(0).cpu()
+        observations = observations.float().unsqueeze(0)
         mode_latent, prob = self.DHA(observations[:,-1,:])
         mode_latent = mode_latent.detach()
         representation_list = []
@@ -343,9 +344,9 @@ class DHA_VAE(nn.Module):
         """
         # 获取当前模式
         #print(obs.shape)
-        obs = obs.cpu()
-        next_obs = next_obs.cpu()
-        contact = contact.cpu()
+        # obs = obs.cpu()
+        # next_obs = next_obs.cpu()
+        # contact = contact.cpu()
         mode_latent, _ = self.DHA(obs[:,-1,:])
         
         # 计算各VAE损失
@@ -353,14 +354,14 @@ class DHA_VAE(nn.Module):
         for i, vae in enumerate(self.TsDyn_modules):
             recon_obs, recon_contact, mu, logvar = vae(obs.flatten(1))
             #print(next_obs.shape,recon_obs.shape)
-            # 重建损失
+            # reconstruction loss
             obs_loss = F.mse_loss(recon_obs, next_obs[:,-1], reduction='none')
             contact_loss = F.binary_cross_entropy(recon_contact, contact[:,-1], reduction='none')
             
-            # KL散度
+            # KL div
             kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
             
-            # 加权损失
+            # weighted_div(obs loss, contact loss, kl_div)
             #print(obs_loss.shape,contact_loss.shape,kl_div.shape)
             loss = obs_loss.sum(dim=-1) + 0.8 * contact_loss.sum(dim=-1) + 0.9 * kl_div
             losses.append(loss.unsqueeze(1))
@@ -379,12 +380,12 @@ class DHA_VAE(nn.Module):
 def test_dha_vae():
     # 配置参数
     batch_size = 32
-    num_his_obs = 100    # 历史观测维度 (e.g., 5步历史×10维)
-    num_recon = 14      # 重建维度 (e.g., 10维状态 + 4维接触)
-    history_len = 10      # 历史步长
-    num_actor_obs = 10   # 当前观测维度
-    num_modes = 3        # 模式数量
-    latent_dim = 32      # 潜在空间维度
+    num_his_obs = 100    
+    num_recon = 14      
+    history_len = 10      
+    num_actor_obs = 10   
+    num_modes = 3        
+    latent_dim = 32      
     
     # 创建模型
     model = DHA_VAE(
