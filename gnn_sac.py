@@ -296,7 +296,8 @@ class SACAgent:
         }
 
         self.dha_vae = DHA_VAE(num_his_obs = 36*50,num_recon = 42,history_len=50,num_actor_obs=36,num_modes=3,tsdyn_latent_dims=64).to(self.device)
-    
+        self.dha_optimizer = optim.Adam(self.dha_vae.parameters(),lr = self.lr)
+
     def select_action(self, observation):
         obs_seq = self.replay_buffer.sample_last_obs(length=50)
         mode_representation = self.dha_vae.get_representation(obs_seq)#TODO:TO SEE HOW TO UTILIZE IT
@@ -368,8 +369,12 @@ class SACAgent:
 
         #VAE update
         observation_batch, _, _, next_observation_batch, _,contact_batch = self.replay_buffer.group_sample(self.batch_size,length=50)
-        vae_loss = self.dha_vae.vae_loss(observation_batch,next_observation_batch,contact_batch)
+        
+
+        vae_loss,obs_losses,contact_losses,kl = self.dha_vae.vae_loss(observation_batch,next_observation_batch,contact_batch)
+        self.dha_optimizer.zero_grad()
         vae_loss.backward()
+        self.dha_optimizer.step()
 
         info = {
             'critic_loss': critic_loss.item(),
@@ -379,6 +384,9 @@ class SACAgent:
             'log_pi': action_log_prob.mean().item(),
             'pi_std': std.mean().item(),
             'vae_loss': vae_loss.item(),
+            'obsl': obs_losses.item(),
+            'kl':kl.item(),
+            'contactl':contact_losses.item(),
         }
         return info
 

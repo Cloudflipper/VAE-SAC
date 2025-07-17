@@ -347,10 +347,14 @@ class DHA_VAE(nn.Module):
         # obs = obs.cpu()
         # next_obs = next_obs.cpu()
         # contact = contact.cpu()
+        batch_size = obs.shape[0]
         mode_latent, _ = self.DHA(obs[:,-1,:])
         
         # 计算各VAE损失
         losses = []
+        obs_losses = []
+        contact_losses = []
+        kl = []
         for i, vae in enumerate(self.TsDyn_modules):
             recon_obs, recon_contact, mu, logvar = vae(obs.flatten(1))
             #print(next_obs.shape,recon_obs.shape)
@@ -365,10 +369,14 @@ class DHA_VAE(nn.Module):
             #print(obs_loss.shape,contact_loss.shape,kl_div.shape)
             loss = obs_loss.sum(dim=-1) + 0.8 * contact_loss.sum(dim=-1) + 0.9 * kl_div
             losses.append(loss.unsqueeze(1))
+            obs_losses.append(obs_loss.sum(dim=-1).unsqueeze(1))
+            contact_losses.append(contact_loss.sum(dim=-1).unsqueeze(1))
+            kl.append(kl_div.unsqueeze(1))
         
         # 模式加权
-        total_loss = (torch.cat(losses, dim=1) * mode_latent).sum()
-        return total_loss
+        total_loss = (torch.cat(losses, dim=1) * mode_latent).sum()/batch_size
+        obs_losses,contact_losses,kl = (torch.cat(obs_losses, dim=1) * mode_latent).sum()/batch_size,(torch.cat(contact_losses, dim=1) * mode_latent).sum()/batch_size,(torch.cat(kl, dim=1) * mode_latent).sum()/batch_size
+        return total_loss,obs_losses,contact_losses,kl
 
     def _initialize_weights(self):
         for m in self.modules():

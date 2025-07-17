@@ -51,6 +51,9 @@ def train(env, log_dir, model_dir, lr, gpu_idx=None, tb_step_recorder="False"):
             ent_coef_losses = []
             ent_coefs = []
             vae_losses = []
+            obsl=[]
+            contactl=[]
+            kl=[]
 
         start_time = time.time()
 
@@ -85,6 +88,9 @@ def train(env, log_dir, model_dir, lr, gpu_idx=None, tb_step_recorder="False"):
                     ent_coef_losses.append(info_agent["ent_coef_loss"])
                     ent_coefs.append(info_agent["ent_coef"])
                     vae_losses.append(info_agent["vae_loss"])
+                    obsl.append(info_agent["obsl"])
+                    kl.append(info_agent["kl"])
+                    contactl.append(info_agent["contactl"])
 
             if step_num % TIMESTEPS == 0:
                 torch.save(agent.gnn_actor.state_dict(), os.path.join(model_dir, f"actor_{step_num}.pth"))
@@ -106,6 +112,9 @@ def train(env, log_dir, model_dir, lr, gpu_idx=None, tb_step_recorder="False"):
             writer.add_scalar("loss/ent_coef_loss", np.array(ent_coef_losses).mean(), step_num)
             writer.add_scalar("loss/ent_coef", np.array(ent_coefs).mean(), step_num)
             writer.add_scalar("loss/vae_loss", np.array(vae_losses).mean(), step_num)
+            writer.add_scalar("loss2/contactl", np.array(contactl).mean(), step_num)
+            writer.add_scalar("loss2/kl", np.array(kl).mean(), step_num)
+            writer.add_scalar("loss2/obsl", np.array(obsl).mean(), step_num)
         writer.flush()
         if tb_step_recorder == "True":
             writer.close()
